@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<plugin
+    xmlns="http://apache.org/cordova/ns/plugins/1.0"
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    id="normannit.midiplayer"
+    version="3.1.0">
+
+    <name>MidiPlayer</name>
+	<description>Play Midi files on iOS</description>
+    <engines>
+        <engine name="cordova" version=">=3.0.0" />
+    </engines>
+	
+    <js-module src="midiplayer.js" name="MidiPlayer">
+        <clobbers target="MidiPlayer" />
+    </js-module>
+    <!-- ios -->
+    <platform name="ios">
+        <config-file target="config.xml" parent="/*">
+            <feature name="MidiPlayer">
+                <param name="ios-package" value="MidiPlayer"/>
+            </feature>
+        </config-file>
+
+        <header-file src="src/ios/MidiPlayer.h" />
+        <source-file src="src/ios/MidiPlayer.m" />
+    </platform>
+</plugin>
