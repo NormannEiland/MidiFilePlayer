@@ -13,5 +13,7 @@
     BOOL paused;
 }
 
+@property (readwrite) AUGraph processingGraph;
+
 - (void) play: (CDVInvokedUrlCommand*)command;
 @end

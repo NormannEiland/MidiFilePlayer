@@ -12,14 +12,15 @@ BOOL paused = NO;
 {
     //NSLog(@"Setup");
     NSString* path = [command.arguments objectAtIndex:0];
+    NSArray* programs = [command.arguments objectAtIndex:1];
     setupCallbackId = command.callbackId;
     
     [self.commandDelegate runInBackground:^{
         //NSLog(@"Setup background");
         CDVPluginResult* pluginResult = nil;
-        if (path != nil && [path length] > 0) {
+        if (path != nil && [path length] > 0 && programs != nil && [programs count] > 0) {
             CDVPluginResult* pluginResult;
-            BOOL success = [self setupPlayer:path];
+            BOOL success = [self setupPlayer:path withInstruments:programs];
             if (success) {
                 released = NO;
                 stopped = YES;
@@ -154,7 +155,7 @@ BOOL paused = NO;
 }
 
 
-- (BOOL)setupPlayer:(NSString*)path {
+- (BOOL)setupPlayer:(NSString*)path withInstruments:(NSArray*)programs {
     // Initialise the music sequence
     NewMusicSequence(&ms);
     
@@ -170,7 +171,11 @@ BOOL paused = NO;
         return NO;
     }
     
-    MusicSequenceFileLoad(ms, (__bridge CFURLRef)(midiFileURL), 0, 0);
+    MusicSequenceFileLoad(ms, (__bridge CFURLRef)(midiFileURL), 0, kMusicSequenceLoadSMF_ChannelsToTracks);
+    //MusicSequenceFileLoad(ms, (__bridge CFURLRef)(midiFileURL), 0, 0);
+    
+    [self setupGraph:programs];
+    [self assignInstrumentsToTracks:programs];
     
     NewMusicPlayer(&mp);
     
@@ -217,9 +222,7 @@ BOOL paused = NO;
                 // Was just stopped
                 //NSLog(@"Stopped");
                 lastStopped = stopped;
-                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsInt: 0];
-                [pluginResult setKeepCallback:[NSNumber numberWithBool:YES]];
-                [self.commandDelegate sendPluginResult:pluginResult callbackId:setupCallbackId];
+                released = YES;
             }
         } else if (paused) {
             //NSLog(@"isPaused");
@@ -238,14 +241,12 @@ BOOL paused = NO;
                 // Track reached end
                 //NSLog(@"Ended");
                 stopped = YES;
+                released = YES;
                 lastStopped = YES;
                 paused = NO;
                 lastPaused = NO;
                 MusicPlayerStop(mp);
                 [self setTime: 0];
-                pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsInt: 0];
-                [pluginResult setKeepCallback:[NSNumber numberWithBool:YES]];
-                [self.commandDelegate sendPluginResult:pluginResult callbackId:setupCallbackId];
             } else if (lastPaused || lastStopped) {
                 // Just started running
                 //NSLog(@"Running");
@@ -264,6 +265,144 @@ BOOL paused = NO;
     pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsInt: 0];
     [pluginResult setKeepCallback:[NSNumber numberWithBool:YES]];
     [self.commandDelegate sendPluginResult:pluginResult callbackId:setupCallbackId];
-    
 }
+
+- (void)setupGraph:(NSArray*)programs {
+    NewAUGraph (&_processingGraph);
+    AUNode samplerNodes[[programs count]];
+    AUNode ioNode, mixerNode;
+    AudioUnit samplerUnits[[programs count]];
+    AudioUnit ioUnit, mixerUnit;
+    
+    AudioComponentDescription cd = {};
+    cd.componentManufacturer     = kAudioUnitManufacturer_Apple;
+    
+    //----------------------------------------
+    // Add 3 Sampler unit nodes to the graph
+    //----------------------------------------
+    cd.componentType = kAudioUnitType_MusicDevice;
+    cd.componentSubType = kAudioUnitSubType_Sampler;
+    
+    for (NSInteger i = 0; i < [programs count]; i++) {
+        AUNode node;
+        AUGraphAddNode (self.processingGraph, &cd, &node);
+        samplerNodes[i] = node;
+    }
+    
+    //-----------------------------------
+    // 2. Add a Mixer unit node to the graph
+    //-----------------------------------
+    cd.componentType          = kAudioUnitType_Mixer;
+    cd.componentSubType       = kAudioUnitSubType_MultiChannelMixer;
+    
+    AUGraphAddNode (self.processingGraph, &cd, &mixerNode);
+    
+    //--------------------------------------
+    // 3. Add the Output unit node to the graph
+    //--------------------------------------
+    cd.componentType = kAudioUnitType_Output;
+    cd.componentSubType = kAudioUnitSubType_RemoteIO;  // Output to speakers
+    
+    AUGraphAddNode (self.processingGraph, &cd, &ioNode);
+    
+    //---------------
+    // Open the graph
+    //---------------
+    AUGraphOpen (self.processingGraph);
+    
+    //-----------------------------------------------------------
+    // Obtain the mixer unit instance from its corresponding node
+    //-----------------------------------------------------------
+    AUGraphNodeInfo (
+                     self.processingGraph,
+                     mixerNode,
+                     NULL,
+                     &mixerUnit
+                     );
+    
+    //--------------------------------
+    // Set the bus count for the mixer
+    //--------------------------------
+    UInt32 numBuses = 3;
+    AudioUnitSetProperty(mixerUnit,
+                         kAudioUnitProperty_ElementCount,
+                         kAudioUnitScope_Input,
+                         0,
+                         &numBuses,
+                         sizeof(numBuses));
+    
+    
+    
+    //------------------
+    // Connect the nodes
+    //------------------
+    for (NSInteger i = 0; i < [programs count]; i++) {
+        AUGraphConnectNodeInput (self.processingGraph, samplerNodes[i], 0, mixerNode, i);
+    }
+    
+    // Connect the mixer unit to the output unit
+    AUGraphConnectNodeInput (self.processingGraph, mixerNode, 0, ioNode, 0);
+    
+    // Obtain references to all of the audio units from their nodes
+    for (NSInteger i = 0; i < [programs count]; i++) {
+        AUGraphNodeInfo (self.processingGraph, samplerNodes[i], 0, &samplerUnits[i]);
+    }
+    
+    AUGraphNodeInfo (self.processingGraph, ioNode, 0, &ioUnit);
+    
+    MusicSequenceSetAUGraph(ms, self.processingGraph);
+    
+    // Set the instruments
+    NSURL * bankURL;
+    
+    NSString *bankPath = [[NSBundle mainBundle] pathForResource:@"www/sounds" ofType:@"sf2"];
+    
+    if ([[NSFileManager defaultManager] fileExistsAtPath:bankPath])
+    {
+        bankURL = [NSURL fileURLWithPath:bankPath isDirectory:NO];
+    } else {
+        return;
+    }
+    
+    
+    for (NSInteger i = 0; i < [programs count]; i++) {
+        AUSamplerBankPresetData bpdata;
+        bpdata.bankURL  = (__bridge CFURLRef) bankURL;
+        bpdata.bankMSB  = kAUSampler_DefaultMelodicBankMSB;
+        bpdata.bankLSB  = kAUSampler_DefaultBankLSB;
+        bpdata.presetID = (UInt8) [programs[i] intValue];
+        
+        AudioUnitSetProperty(samplerUnits[i],
+                             kAUSamplerProperty_LoadPresetFromBank,
+                             kAudioUnitScope_Global,
+                             0,
+                             &bpdata,
+                             sizeof(bpdata));
+    }
+}
+
+- (void)assignInstrumentsToTracks:(NSArray*)programs {
+    //-------------------------------------------------
+    // Set the AUSampler nodes to be used by each track
+    //-------------------------------------------------
+    MusicTrack tracks[[programs count]];
+    
+    for (NSInteger i = 0; i < [programs count]; i++) {
+        MusicTrack track;
+        MusicSequenceGetIndTrack(ms, i, &track);
+        tracks[i] = track;
+    }
+    
+    AUNode nodes[[programs count]];
+    for (NSInteger i = 0; i < [programs count]; i++) {
+        AUNode node;
+        AUGraphGetIndNode (self.processingGraph, i, &node);
+        nodes[i] = node;
+    }
+    
+    for (NSInteger i = 0; i < [programs count]; i++) {
+        MusicTrackSetDestNode(tracks[i], nodes[i]);
+    }
+}
+
 @end

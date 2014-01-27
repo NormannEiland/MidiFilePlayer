@@ -6,8 +6,8 @@ var MidiPlayer = function () {
 };
 
 MidiPlayer.prototype = {
-    setup: function (midiFilePath, success, error, status) {
-	exec("setup", [midiFilePath], function (statusValue) {
+    setup: function (midiFilePath, programs, success, error, status) {
+	exec("setup", [midiFilePath, programs], function (statusValue) {
 	    //console.log("Status: " + statusValue);
 	    if (statusValue === "success") {
 		if (success) {
