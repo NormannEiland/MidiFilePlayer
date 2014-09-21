@@ -24,5 +24,6 @@
 
         <header-file src="src/ios/MidiPlayer.h" />
         <source-file src="src/ios/MidiPlayer.m" />
+        <resource-file src="src/ios/sounds.sf2" />
     </platform>
 </plugin>
