@@ -355,7 +355,7 @@ BOOL paused = NO;
     // Set the instruments
     NSURL * bankURL;
     
-    NSString *bankPath = [[NSBundle mainBundle] pathForResource:@"www/sounds" ofType:@"sf2"];
+    NSString *bankPath = [[NSBundle mainBundle] pathForResource:@"sounds" ofType:@"sf2"];
     
     if ([[NSFileManager defaultManager] fileExistsAtPath:bankPath])
     {
