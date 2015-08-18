@@ -1,6 +1,5 @@
 # MidiFilePlayer
-Phonegap plugin that plays .mid on iOS
 
-Forked from https://github.com/NormannEiland/MidiFilePlayer
+Phonegap plugin that plays midi file on iOS using a soundfont
 
-Auto instrument channel mapping is yet to come.
+Please refer to the sample directory if you need help learning how to use it
