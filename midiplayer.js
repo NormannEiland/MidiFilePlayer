@@ -1,44 +1,54 @@
-var exec = function (methodName, options, success, error) {
-    cordova.exec(success, error, "MidiPlayer", methodName, options);
+var cordova = require('cordova'),
+    exec = require('cordova/exec');
+
+var exec2 = function (methodName, options, success, error) {
+    exec(success, error, "MidiPlayer", methodName, options);
 };
 
-var MidiPlayer = function () {
-};
+var MidiPlayer = function () {};
 
 MidiPlayer.prototype = {
+    getPathFromAsset: function(path) {
+        if(device.platform == "Android")
+        {
+            return "www/"+path;
+        }
+        var finalPath = cordova.file.applicationDirectory + "www/" + path;
+        finalPath = finalPath.substr(7);
+        return finalPath;
+    },
     setup: function (midiFilePath, programs, success, error, status) {
-	exec("setup", [midiFilePath, programs], function (statusValue) {
-	    //console.log("Status: " + statusValue);
-	    if (statusValue === "success") {
-		if (success) {
-		    success();
-		}
-		return;
-	    }
-	    if (status) {
-		status(statusValue);
-	    }
-	}, error);    
+        exec2("setup", [midiFilePath, programs], function (statusValue) {
+            if (statusValue === "success") {
+                if (success) {
+                    success();
+                }
+                return;
+            }
+            if (status) {
+                status(statusValue);
+            }
+        }, error);    
     },
     play: function () {
-	exec("play", [], null, null);    
+        exec2("play", [], function() { console.log("success play"); }, function(err) { console.log("error play:" + err); });    
     },
     pause: function () {
-	exec("pause", [], null, null);    
+        exec2("pause", [], null, null);    
     },
     stop: function () {
-	exec("stop", [], null, null);    
+        exec2("stop", [], null, null);    
     },
     getCurrentPosition: function (success, error) {
-	exec("getCurrentPosition", [], success, error);    
+        exec2("getCurrentPosition", [], success, error);    
     },
     seekTo: function (position) {
-	exec("seekTo", [position], null, null);    
+        exec2("seekTo", [position], null, null);    
     },
     release: function () {
-	exec("release", [], null, null);    
+        exec2("release", [], null, null);    
     }
 };
 
-module.exports = new MidiPlayer();
-
+var midiPlayer = new MidiPlayer();
+module.exports = midiPlayer;
